@@ -71,21 +71,21 @@ public partial class Tools
             INNER JOIN sys.objects o ON d.referenced_id = o.object_id
             WHERE d.referencing_id = (SELECT object_id FROM sys.views v INNER JOIN sys.schemas s ON v.schema_id = s.schema_id WHERE v.name = @ViewName AND (s.name = @ViewSchema OR @ViewSchema IS NULL))";
 
-        var conn = database == null 
+        var conn = database == null
             ? await _connectionFactory.GetOpenConnectionAsync()
             : await _connectionFactory.GetOpenConnectionAsync(database);
-        
+
         try
         {
             using (conn)
             {
                 var result = new Dictionary<string, object?>();
-                
+
                 // View info
                 using (var cmd = new SqlCommand(ViewInfoQuery, conn))
                 {
-                    cmd.Parameters.AddWithValue("@ViewName", name);
-                    cmd.Parameters.AddWithValue("@ViewSchema", schema == null ? DBNull.Value : schema);
+                    _ = cmd.Parameters.AddWithValue("@ViewName", name);
+                    _ = cmd.Parameters.AddWithValue("@ViewSchema", schema == null ? DBNull.Value : schema);
                     using var reader = await cmd.ExecuteReaderAsync();
                     if (await reader.ReadAsync())
                     {
@@ -108,8 +108,8 @@ public partial class Tools
                 // Columns
                 using (var cmd = new SqlCommand(ColumnsQuery, conn))
                 {
-                    cmd.Parameters.AddWithValue("@ViewName", name);
-                    cmd.Parameters.AddWithValue("@ViewSchema", schema == null ? DBNull.Value : schema);
+                    _ = cmd.Parameters.AddWithValue("@ViewName", name);
+                    _ = cmd.Parameters.AddWithValue("@ViewSchema", schema == null ? DBNull.Value : schema);
                     using var reader = await cmd.ExecuteReaderAsync();
                     var columns = new List<object>();
                     while (await reader.ReadAsync())
@@ -131,8 +131,8 @@ public partial class Tools
                 // Indexes
                 using (var cmd = new SqlCommand(IndexesQuery, conn))
                 {
-                    cmd.Parameters.AddWithValue("@ViewName", name);
-                    cmd.Parameters.AddWithValue("@ViewSchema", schema == null ? DBNull.Value : schema);
+                    _ = cmd.Parameters.AddWithValue("@ViewName", name);
+                    _ = cmd.Parameters.AddWithValue("@ViewSchema", schema == null ? DBNull.Value : schema);
                     using var reader = await cmd.ExecuteReaderAsync();
                     var indexes = new List<object>();
                     while (await reader.ReadAsync())
@@ -151,8 +151,8 @@ public partial class Tools
                 // Definition
                 using (var cmd = new SqlCommand(DefinitionQuery, conn))
                 {
-                    cmd.Parameters.AddWithValue("@ViewName", name);
-                    cmd.Parameters.AddWithValue("@ViewSchema", schema == null ? DBNull.Value : schema);
+                    _ = cmd.Parameters.AddWithValue("@ViewName", name);
+                    _ = cmd.Parameters.AddWithValue("@ViewSchema", schema == null ? DBNull.Value : schema);
                     using var reader = await cmd.ExecuteReaderAsync();
                     if (await reader.ReadAsync())
                     {
@@ -163,8 +163,8 @@ public partial class Tools
                 // Dependencies
                 using (var cmd = new SqlCommand(DependenciesQuery, conn))
                 {
-                    cmd.Parameters.AddWithValue("@ViewName", name);
-                    cmd.Parameters.AddWithValue("@ViewSchema", schema == null ? DBNull.Value : schema);
+                    _ = cmd.Parameters.AddWithValue("@ViewName", name);
+                    _ = cmd.Parameters.AddWithValue("@ViewSchema", schema == null ? DBNull.Value : schema);
                     using var reader = await cmd.ExecuteReaderAsync();
                     var dependencies = new List<object>();
                     while (await reader.ReadAsync())

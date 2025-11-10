@@ -100,22 +100,22 @@ public partial class Tools
             INNER JOIN sys.objects o ON d.referenced_id = o.object_id
             WHERE d.referencing_id = (SELECT object_id FROM sys.objects obj INNER JOIN sys.schemas s ON obj.schema_id = s.schema_id WHERE obj.type IN ('FN', 'IF', 'TF') AND obj.name = @FunctionName AND (s.name = @FunctionSchema OR @FunctionSchema IS NULL))";
 
-        var conn = database == null 
+        var conn = database == null
             ? await _connectionFactory.GetOpenConnectionAsync()
             : await _connectionFactory.GetOpenConnectionAsync(database);
-        
+
         try
         {
             using (conn)
             {
                 var result = new Dictionary<string, object?>();
                 string? functionType = null;
-                
+
                 // Function info
                 using (var cmd = new SqlCommand(FunctionInfoQuery, conn))
                 {
-                    cmd.Parameters.AddWithValue("@FunctionName", name);
-                    cmd.Parameters.AddWithValue("@FunctionSchema", schema == null ? DBNull.Value : schema);
+                    _ = cmd.Parameters.AddWithValue("@FunctionName", name);
+                    _ = cmd.Parameters.AddWithValue("@FunctionSchema", schema == null ? DBNull.Value : schema);
                     using var reader = await cmd.ExecuteReaderAsync();
                     if (await reader.ReadAsync())
                     {
@@ -142,8 +142,8 @@ public partial class Tools
                 // Parameters
                 using (var cmd = new SqlCommand(ParametersQuery, conn))
                 {
-                    cmd.Parameters.AddWithValue("@FunctionName", name);
-                    cmd.Parameters.AddWithValue("@FunctionSchema", schema == null ? DBNull.Value : schema);
+                    _ = cmd.Parameters.AddWithValue("@FunctionName", name);
+                    _ = cmd.Parameters.AddWithValue("@FunctionSchema", schema == null ? DBNull.Value : schema);
                     using var reader = await cmd.ExecuteReaderAsync();
                     var parameters = new List<object>();
                     while (await reader.ReadAsync())
@@ -165,8 +165,8 @@ public partial class Tools
                 // Return type (for scalar functions)
                 using (var cmd = new SqlCommand(ReturnTypeQuery, conn))
                 {
-                    cmd.Parameters.AddWithValue("@FunctionName", name);
-                    cmd.Parameters.AddWithValue("@FunctionSchema", schema == null ? DBNull.Value : schema);
+                    _ = cmd.Parameters.AddWithValue("@FunctionName", name);
+                    _ = cmd.Parameters.AddWithValue("@FunctionSchema", schema == null ? DBNull.Value : schema);
                     using var reader = await cmd.ExecuteReaderAsync();
                     if (await reader.ReadAsync())
                     {
@@ -183,33 +183,31 @@ public partial class Tools
                 // Table columns (for table-valued functions)
                 if (functionType == "IF" || functionType == "TF")
                 {
-                    using (var cmd = new SqlCommand(TableColumnsQuery, conn))
+                    using var cmd = new SqlCommand(TableColumnsQuery, conn);
+                    _ = cmd.Parameters.AddWithValue("@FunctionName", name);
+                    _ = cmd.Parameters.AddWithValue("@FunctionSchema", schema == null ? DBNull.Value : schema);
+                    using var reader = await cmd.ExecuteReaderAsync();
+                    var columns = new List<object>();
+                    while (await reader.ReadAsync())
                     {
-                        cmd.Parameters.AddWithValue("@FunctionName", name);
-                        cmd.Parameters.AddWithValue("@FunctionSchema", schema == null ? DBNull.Value : schema);
-                        using var reader = await cmd.ExecuteReaderAsync();
-                        var columns = new List<object>();
-                        while (await reader.ReadAsync())
+                        columns.Add(new
                         {
-                            columns.Add(new
-                            {
-                                name = reader["name"],
-                                type = reader["type"],
-                                length = reader["length"],
-                                precision = reader["precision"],
-                                scale = reader["scale"],
-                                nullable = (bool)reader["nullable"]
-                            });
-                        }
-                        result["table_columns"] = columns;
+                            name = reader["name"],
+                            type = reader["type"],
+                            length = reader["length"],
+                            precision = reader["precision"],
+                            scale = reader["scale"],
+                            nullable = (bool)reader["nullable"]
+                        });
                     }
+                    result["table_columns"] = columns;
                 }
 
                 // Definition
                 using (var cmd = new SqlCommand(DefinitionQuery, conn))
                 {
-                    cmd.Parameters.AddWithValue("@FunctionName", name);
-                    cmd.Parameters.AddWithValue("@FunctionSchema", schema == null ? DBNull.Value : schema);
+                    _ = cmd.Parameters.AddWithValue("@FunctionName", name);
+                    _ = cmd.Parameters.AddWithValue("@FunctionSchema", schema == null ? DBNull.Value : schema);
                     using var reader = await cmd.ExecuteReaderAsync();
                     if (await reader.ReadAsync())
                     {
@@ -220,8 +218,8 @@ public partial class Tools
                 // Dependencies
                 using (var cmd = new SqlCommand(DependenciesQuery, conn))
                 {
-                    cmd.Parameters.AddWithValue("@FunctionName", name);
-                    cmd.Parameters.AddWithValue("@FunctionSchema", schema == null ? DBNull.Value : schema);
+                    _ = cmd.Parameters.AddWithValue("@FunctionName", name);
+                    _ = cmd.Parameters.AddWithValue("@FunctionSchema", schema == null ? DBNull.Value : schema);
                     using var reader = await cmd.ExecuteReaderAsync();
                     var dependencies = new List<object>();
                     while (await reader.ReadAsync())

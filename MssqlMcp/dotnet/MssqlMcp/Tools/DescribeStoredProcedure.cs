@@ -69,21 +69,21 @@ public partial class Tools
             INNER JOIN sys.objects o ON d.referenced_id = o.object_id
             WHERE d.referencing_id = (SELECT object_id FROM sys.procedures p INNER JOIN sys.schemas s ON p.schema_id = s.schema_id WHERE p.name = @ProcedureName AND (s.name = @ProcedureSchema OR @ProcedureSchema IS NULL))";
 
-        var conn = database == null 
+        var conn = database == null
             ? await _connectionFactory.GetOpenConnectionAsync()
             : await _connectionFactory.GetOpenConnectionAsync(database);
-        
+
         try
         {
             using (conn)
             {
                 var result = new Dictionary<string, object?>();
-                
+
                 // Procedure info
                 using (var cmd = new SqlCommand(ProcedureInfoQuery, conn))
                 {
-                    cmd.Parameters.AddWithValue("@ProcedureName", name);
-                    cmd.Parameters.AddWithValue("@ProcedureSchema", schema == null ? DBNull.Value : schema);
+                    _ = cmd.Parameters.AddWithValue("@ProcedureName", name);
+                    _ = cmd.Parameters.AddWithValue("@ProcedureSchema", schema == null ? DBNull.Value : schema);
                     using var reader = await cmd.ExecuteReaderAsync();
                     if (await reader.ReadAsync())
                     {
@@ -108,8 +108,8 @@ public partial class Tools
                 // Parameters
                 using (var cmd = new SqlCommand(ParametersQuery, conn))
                 {
-                    cmd.Parameters.AddWithValue("@ProcedureName", name);
-                    cmd.Parameters.AddWithValue("@ProcedureSchema", schema == null ? DBNull.Value : schema);
+                    _ = cmd.Parameters.AddWithValue("@ProcedureName", name);
+                    _ = cmd.Parameters.AddWithValue("@ProcedureSchema", schema == null ? DBNull.Value : schema);
                     using var reader = await cmd.ExecuteReaderAsync();
                     var parameters = new List<object>();
                     while (await reader.ReadAsync())
@@ -132,8 +132,8 @@ public partial class Tools
                 // Definition
                 using (var cmd = new SqlCommand(DefinitionQuery, conn))
                 {
-                    cmd.Parameters.AddWithValue("@ProcedureName", name);
-                    cmd.Parameters.AddWithValue("@ProcedureSchema", schema == null ? DBNull.Value : schema);
+                    _ = cmd.Parameters.AddWithValue("@ProcedureName", name);
+                    _ = cmd.Parameters.AddWithValue("@ProcedureSchema", schema == null ? DBNull.Value : schema);
                     using var reader = await cmd.ExecuteReaderAsync();
                     if (await reader.ReadAsync())
                     {
@@ -144,8 +144,8 @@ public partial class Tools
                 // Dependencies
                 using (var cmd = new SqlCommand(DependenciesQuery, conn))
                 {
-                    cmd.Parameters.AddWithValue("@ProcedureName", name);
-                    cmd.Parameters.AddWithValue("@ProcedureSchema", schema == null ? DBNull.Value : schema);
+                    _ = cmd.Parameters.AddWithValue("@ProcedureName", name);
+                    _ = cmd.Parameters.AddWithValue("@ProcedureSchema", schema == null ? DBNull.Value : schema);
                     using var reader = await cmd.ExecuteReaderAsync();
                     var dependencies = new List<object>();
                     while (await reader.ReadAsync())
