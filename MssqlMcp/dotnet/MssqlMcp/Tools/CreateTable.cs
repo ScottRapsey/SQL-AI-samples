@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System.ComponentModel;
+using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
 
@@ -12,19 +13,24 @@ public partial class Tools
     [McpServerTool(
         Title = "Create Table",
         ReadOnly = false,
+        Idempotent = false,
         Destructive = false),
-        Description("Creates a new table in the SQL Database. Expects a valid CREATE TABLE SQL statement as input.")]
+        Description("Creates a new table in the SQL Database")]
     public async Task<DbOperationResult> CreateTable(
-        [Description("CREATE TABLE SQL statement")] string sql)
+        [Description("SQL CREATE TABLE statement")] string sql,
+        [Description("Optional database name. If not specified, uses the default database from connection string.")] string? database = null)
     {
-        var conn = await _connectionFactory.GetOpenConnectionAsync();
+        var conn = database == null 
+            ? await _connectionFactory.GetOpenConnectionAsync()
+            : await _connectionFactory.GetOpenConnectionAsync(database);
+        
         try
         {
             using (conn)
             {
-                using var cmd = new Microsoft.Data.SqlClient.SqlCommand(sql, conn);
-                _ = await cmd.ExecuteNonQueryAsync();
-                return new DbOperationResult(success: true);
+                using var cmd = new SqlCommand(sql, conn);
+                await cmd.ExecuteNonQueryAsync();
+                return new DbOperationResult(success: true, rowsAffected: 0);
             }
         }
         catch (Exception ex)

@@ -17,7 +17,8 @@ public partial class Tools
         Destructive = false),
         Description("Returns table schema")]
     public async Task<DbOperationResult> DescribeTable(
-        [Description("Name of table")] string name)
+        [Description("Name of table")] string name,
+        [Description("Optional database name. If not specified, uses the default database from connection string.")] string? database = null)
     {
         string? schema = null;
         if (name.Contains('.'))
@@ -89,7 +90,10 @@ JOIN
 GROUP BY
     fk.name, tp.schema_id, tp.name, tr.schema_id, tr.name;
 ";
-        var conn = await _connectionFactory.GetOpenConnectionAsync();
+        var conn = database == null 
+            ? await _connectionFactory.GetOpenConnectionAsync()
+            : await _connectionFactory.GetOpenConnectionAsync(database);
+        
         try
         {
             using (conn)

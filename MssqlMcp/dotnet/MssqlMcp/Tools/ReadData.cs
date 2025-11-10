@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
 
 namespace Mssql.McpServer;
+
 public partial class Tools
 {
     [McpServerTool(
@@ -14,27 +15,35 @@ public partial class Tools
         ReadOnly = true,
         Idempotent = true,
         Destructive = false),
-        Description("Executes SQL queries against SQL Database to read data")]
+        Description("Reads data from the database using a SELECT query")]
     public async Task<DbOperationResult> ReadData(
-        [Description("SQL query to execute")] string sql)
+        [Description("SQL SELECT query")] string sql,
+        [Description("Optional database name. If not specified, uses the default database from connection string.")] string? database = null)
     {
-        var conn = await _connectionFactory.GetOpenConnectionAsync();
+        var conn = database == null 
+            ? await _connectionFactory.GetOpenConnectionAsync()
+            : await _connectionFactory.GetOpenConnectionAsync(database);
+        
         try
         {
             using (conn)
             {
                 using var cmd = new SqlCommand(sql, conn);
                 using var reader = await cmd.ExecuteReaderAsync();
+                
                 var results = new List<Dictionary<string, object?>>();
+                
                 while (await reader.ReadAsync())
                 {
                     var row = new Dictionary<string, object?>();
-                    for (var i = 0; i < reader.FieldCount; i++)
+                    for (int i = 0; i < reader.FieldCount; i++)
                     {
-                        row[reader.GetName(i)] = reader.IsDBNull(i) ? null : reader.GetValue(i);
+                        var value = reader.GetValue(i);
+                        row[reader.GetName(i)] = value is DBNull ? null : value;
                     }
                     results.Add(row);
                 }
+                
                 return new DbOperationResult(success: true, data: results);
             }
         }

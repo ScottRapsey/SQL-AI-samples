@@ -17,6 +17,21 @@ public class SqlConnectionFactory : ISqlConnectionFactory
         return conn;
     }
 
+    public async Task<SqlConnection> GetOpenConnectionAsync(string databaseName)
+    {
+        var baseConnectionString = GetConnectionString();
+
+        // Override the database in the connection string
+        var builder = new SqlConnectionStringBuilder(baseConnectionString)
+        {
+            InitialCatalog = databaseName
+        };
+
+        var conn = new SqlConnection(builder.ConnectionString);
+        await conn.OpenAsync();
+        return conn;
+    }
+
     private static string GetConnectionString()
     {
         var connectionString = Environment.GetEnvironmentVariable("CONNECTION_STRING");

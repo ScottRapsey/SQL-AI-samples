@@ -18,9 +18,13 @@ public partial class Tools
         Idempotent = true,
         Destructive = false),
         Description("Lists all tables in the SQL Database.")]
-    public async Task<DbOperationResult> ListTables()
+    public async Task<DbOperationResult> ListTables(
+        [Description("Optional database name. If not specified, uses the default database from connection string.")] string? database = null)
     {
-        var conn = await _connectionFactory.GetOpenConnectionAsync();
+        var conn = database == null 
+            ? await _connectionFactory.GetOpenConnectionAsync()
+            : await _connectionFactory.GetOpenConnectionAsync(database);
+        
         try
         {
             using (conn)
