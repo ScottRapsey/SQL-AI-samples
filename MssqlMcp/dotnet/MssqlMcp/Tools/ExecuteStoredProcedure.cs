@@ -3,6 +3,7 @@
 
 using System.ComponentModel;
 using System.Data;
+using System.Text.Json;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
@@ -15,123 +16,158 @@ public partial class Tools
         Title = "Execute Stored Procedure",
         ReadOnly = false,
         Idempotent = false,
-        Destructive = false),
+        Destructive = true),
         Description("Executes a stored procedure with optional parameters and returns results including output parameters and return value")]
     public async Task<DbOperationResult> ExecuteStoredProcedure(
         [Description("Name of stored procedure (can include schema, e.g., 'dbo.MyProc')")] string name,
         [Description("Optional JSON object containing parameter names and values, e.g., {\"@param1\": \"value1\", \"@param2\": 123}")] string? parameters = null,
         [Description("Optional database name. If not specified, uses the default database from connection string.")] string? database = null)
     {
-        string? schema = null;
-        if (name.Contains('.'))
-        {
-            var parts = name.Split('.');
-            if (parts.Length > 1)
-            {
-                schema = parts[0];
-                name = parts[1];
-            }
-        }
-
-        var procName = schema != null ? $"[{schema}].[{name}]" : $"[{name}]";
-
-        var conn = database == null
-            ? await _connectionFactory.GetOpenConnectionAsync()
-            : await _connectionFactory.GetOpenConnectionAsync(database);
-
         try
         {
-            using (conn)
+            string? schema = null;
+            if (name.Contains('.'))
             {
-                using var cmd = new SqlCommand(procName, conn)
+                var parts = name.Split('.');
+                if (parts.Length > 1)
                 {
-                    CommandType = CommandType.StoredProcedure
-                };
+                    schema = parts[0];
+                    name = parts[1];
+                }
+            }
 
-                // Parse and add parameters if provided
-                if (!string.IsNullOrEmpty(parameters))
+            var procName = schema != null ? $"[{schema}].[{name}]" : $"[{name}]";
+
+            var conn = database == null
+                ? await _connectionFactory.GetOpenConnectionAsync()
+                : await _connectionFactory.GetOpenConnectionAsync(database);
+
+            try
+            {
+                using (conn)
                 {
-                    try
+                    using var cmd = new SqlCommand(procName, conn)
                     {
-                        var paramDict = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object>>(parameters);
-                        if (paramDict != null)
+                        CommandType = CommandType.StoredProcedure
+                    };
+
+                    // Parse and add parameters if provided
+                    if (!string.IsNullOrEmpty(parameters))
+                    {
+                        try
                         {
-                            foreach (var param in paramDict)
+                            var paramDict = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(parameters);
+                            if (paramDict != null)
                             {
-                                _ = cmd.Parameters.AddWithValue(param.Key, param.Value ?? DBNull.Value);
+                                foreach (var param in paramDict)
+                                {
+                                    var value = ConvertJsonElementToObject(param.Value);
+                                    _ = cmd.Parameters.AddWithValue(param.Key, value ?? DBNull.Value);
+                                }
                             }
                         }
-                    }
-                    catch (Exception ex)
-                    {
-                        return new DbOperationResult(success: false, error: $"Invalid parameter JSON: {ex.Message}");
-                    }
-                }
-
-                // Add return value parameter
-                var returnParam = cmd.Parameters.Add("@RETURN_VALUE", SqlDbType.Int);
-                returnParam.Direction = ParameterDirection.ReturnValue;
-
-                var result = new Dictionary<string, object>();
-                var allResultSets = new List<List<Dictionary<string, object?>>>();
-
-                // Execute and read all result sets
-                using var reader = await cmd.ExecuteReaderAsync();
-
-                do
-                {
-                    var resultSet = new List<Dictionary<string, object?>>();
-                    while (await reader.ReadAsync())
-                    {
-                        var row = new Dictionary<string, object?>();
-                        for (var i = 0; i < reader.FieldCount; i++)
+                        catch (Exception ex)
                         {
-                            var value = reader.GetValue(i);
-                            row[reader.GetName(i)] = value is DBNull ? null : value;
+                            return new DbOperationResult(success: false, error: $"Invalid parameter JSON: {ex.Message}");
                         }
-                        resultSet.Add(row);
                     }
-                    if (resultSet.Count > 0)
+
+                    // Add return value parameter
+                    var returnParam = cmd.Parameters.Add("@RETURN_VALUE", SqlDbType.Int);
+                    returnParam.Direction = ParameterDirection.ReturnValue;
+
+                    var result = new Dictionary<string, object>();
+                    var allResultSets = new List<List<Dictionary<string, object?>>>();
+
+                    // Execute and read all result sets
+                    using var reader = await cmd.ExecuteReaderAsync();
+
+                    do
                     {
-                        allResultSets.Add(resultSet);
-                    }
-                } while (await reader.NextResultAsync());
+                        var resultSet = new List<Dictionary<string, object?>>();
+                        while (await reader.ReadAsync())
+                        {
+                            var row = new Dictionary<string, object?>();
+                            for (var i = 0; i < reader.FieldCount; i++)
+                            {
+                                var value = reader.GetValue(i);
+                                row[reader.GetName(i)] = value is DBNull ? null : value;
+                            }
+                            resultSet.Add(row);
+                        }
+                        if (resultSet.Count > 0)
+                        {
+                            allResultSets.Add(resultSet);
+                        }
+                    } while (await reader.NextResultAsync());
 
-                // Get output parameters and return value
-                var outputParams = new Dictionary<string, object?>();
-                foreach (SqlParameter param in cmd.Parameters)
-                {
-                    if (param.Direction == ParameterDirection.Output ||
-                        param.Direction == ParameterDirection.InputOutput ||
-                        param.Direction == ParameterDirection.ReturnValue)
+                    // Get output parameters and return value
+                    var outputParams = new Dictionary<string, object?>();
+                    foreach (SqlParameter param in cmd.Parameters)
                     {
-                        outputParams[param.ParameterName] = param.Value is DBNull ? null : param.Value;
+                        if (param.Direction == ParameterDirection.Output ||
+                            param.Direction == ParameterDirection.InputOutput ||
+                            param.Direction == ParameterDirection.ReturnValue)
+                        {
+                            outputParams[param.ParameterName] = param.Value is DBNull ? null : param.Value;
+                        }
+                    }
+
+                    result["return_value"] = returnParam.Value;
+
+                    if (allResultSets.Count == 1)
+                    {
+                        result["result_set"] = allResultSets[0];
+                    }
+                    else if (allResultSets.Count > 1)
+                    {
+                        result["result_sets"] = allResultSets;
+                    }
+
+                    if (outputParams.Count > 1) // More than just return value
+                    {
+                        result["output_parameters"] = outputParams;
+                    }
+
+                    return new DbOperationResult(success: true, data: result);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "ExecuteStoredProcedure failed: {Message}", ex.Message);
+                var exceptionMessage = ex.Message;
+                if (ex is SqlException sqlEx)
+                {
+                    exceptionMessage += $" (SQL Error Code: {sqlEx.Number})";
+                }
+                if (ex.InnerException != null)
+                {
+                    exceptionMessage += $" Inner Exception: {ex.InnerException.Message}";
+                    if (ex.InnerException is SqlException innerSqlEx)
+                    {
+                        exceptionMessage += $" (Inner SQL Error Code: {innerSqlEx.Number})";
                     }
                 }
-
-                result["return_value"] = returnParam.Value;
-
-                if (allResultSets.Count == 1)
-                {
-                    result["result_set"] = allResultSets[0];
-                }
-                else if (allResultSets.Count > 1)
-                {
-                    result["result_sets"] = allResultSets;
-                }
-
-                if (outputParams.Count > 1) // More than just return value
-                {
-                    result["output_parameters"] = outputParams;
-                }
-
-                return new DbOperationResult(success: true, data: result);
+                return new DbOperationResult(success: false, error: exceptionMessage);
             }
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "ExecuteStoredProcedure failed: {Message}", ex.Message);
-            return new DbOperationResult(success: false, error: ex.Message);
+            var exceptionMessage = ex.Message;
+            if (ex is SqlException sqlEx)
+            {
+                exceptionMessage += $" (SQL Error Code: {sqlEx.Number})";
+            }
+            if (ex.InnerException != null)
+            {
+                exceptionMessage += $" Inner Exception: {ex.InnerException.Message}";
+                if (ex.InnerException is SqlException innerSqlEx)
+                {
+                    exceptionMessage += $" (Inner SQL Error Code: {innerSqlEx.Number})";
+                }
+            }
+            return new DbOperationResult(success: false, error: exceptionMessage);
         }
     }
 }
