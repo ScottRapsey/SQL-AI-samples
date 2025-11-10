@@ -79,7 +79,7 @@ public partial class Tools
         {
             using (conn)
             {
-                var result = new Dictionary<string, object>();
+                var result = new Dictionary<string, object?>();
                 
                 // View info
                 using (var cmd = new SqlCommand(ViewInfoQuery, conn))

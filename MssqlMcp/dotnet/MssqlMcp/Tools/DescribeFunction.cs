@@ -108,7 +108,7 @@ public partial class Tools
         {
             using (conn)
             {
-                var result = new Dictionary<string, object>();
+                var result = new Dictionary<string, object?>();
                 string? functionType = null;
                 
                 // Function info
