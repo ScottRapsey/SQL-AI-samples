@@ -19,7 +19,7 @@ public partial class Tools
     public async Task<DbOperationResult> DescribeDatabase(
         [Description("Optional database name. If not specified, describes the default database from connection string.")] string? database = null)
     {
-        // Query for database properties
+        // Query for database properties - more version-safe query
         const string DatabaseInfoQuery = @"
             SELECT 
                 db.name,
@@ -33,11 +33,27 @@ public partial class Tools
                 db.is_auto_shrink_on,
                 db.state_desc,
                 db.recovery_model_desc,
-                SUSER_SNAME(db.owner_sid) AS owner,
-                db.is_encrypted,
-                db.is_change_tracking_enabled
+                SUSER_SNAME(db.owner_sid) AS owner
             FROM sys.databases db
             WHERE db.name = DB_NAME()";
+
+        // Query for optional columns (SQL Server 2008+)
+        const string EncryptionQuery = @"
+            SELECT 
+                CASE 
+                    WHEN EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('sys.databases') AND name = 'is_encrypted')
+                    THEN (SELECT CAST(is_encrypted AS INT) FROM sys.databases WHERE database_id = DB_ID())
+                    ELSE 0 
+                END AS is_encrypted";
+
+        // Query for change tracking (SQL Server 2016+)
+        const string ChangeTrackingQuery = @"
+            SELECT 
+                CASE 
+                    WHEN EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('sys.databases') AND name = 'is_change_tracking_enabled')
+                    THEN (SELECT CAST(is_change_tracking_enabled AS INT) FROM sys.databases WHERE database_id = DB_ID())
+                    ELSE 0 
+                END AS is_change_tracking_enabled";
 
         // Query for database size
         const string DatabaseSizeQuery = @"
@@ -98,29 +114,53 @@ public partial class Tools
             {
                 var result = new Dictionary<string, object>();
 
-                // Database info
+                // Database info (core properties that exist in all versions)
                 using (var cmd = new SqlCommand(DatabaseInfoQuery, conn))
                 {
                     using var reader = await cmd.ExecuteReaderAsync();
                     if (await reader.ReadAsync())
                     {
-                        result["database"] = new
+                        var dbInfo = new Dictionary<string, object?>
                         {
-                            name = reader["name"],
-                            database_id = reader["database_id"],
-                            create_date = reader["create_date"],
-                            compatibility_level = reader["compatibility_level"],
-                            collation = reader["collation_name"],
-                            user_access = reader["user_access_desc"],
-                            is_read_only = (bool)reader["is_read_only"],
-                            is_auto_close_on = (bool)reader["is_auto_close_on"],
-                            is_auto_shrink_on = (bool)reader["is_auto_shrink_on"],
-                            state = reader["state_desc"],
-                            recovery_model = reader["recovery_model_desc"],
-                            owner = reader["owner"],
-                            is_encrypted = (bool)reader["is_encrypted"],
-                            is_change_tracking_enabled = (bool)reader["is_change_tracking_enabled"]
+                            ["name"] = reader["name"],
+                            ["database_id"] = reader["database_id"],
+                            ["create_date"] = reader["create_date"],
+                            ["compatibility_level"] = reader["compatibility_level"],
+                            ["collation"] = reader["collation_name"],
+                            ["user_access"] = reader["user_access_desc"],
+                            ["is_read_only"] = (bool)reader["is_read_only"],
+                            ["is_auto_close_on"] = (bool)reader["is_auto_close_on"],
+                            ["is_auto_shrink_on"] = (bool)reader["is_auto_shrink_on"],
+                            ["state"] = reader["state_desc"],
+                            ["recovery_model"] = reader["recovery_model_desc"],
+                            ["owner"] = reader["owner"]
                         };
+
+                        // Try to get encryption status
+                        try
+                        {
+                            using var encCmd = new SqlCommand(EncryptionQuery, conn);
+                            var encResult = await encCmd.ExecuteScalarAsync();
+                            dbInfo["is_encrypted"] = Convert.ToBoolean(encResult);
+                        }
+                        catch
+                        {
+                            dbInfo["is_encrypted"] = false;
+                        }
+
+                        // Try to get change tracking status
+                        try
+                        {
+                            using var ctCmd = new SqlCommand(ChangeTrackingQuery, conn);
+                            var ctResult = await ctCmd.ExecuteScalarAsync();
+                            dbInfo["is_change_tracking_enabled"] = Convert.ToBoolean(ctResult);
+                        }
+                        catch
+                        {
+                            dbInfo["is_change_tracking_enabled"] = false;
+                        }
+
+                        result["database"] = dbInfo;
                     }
                 }
 
