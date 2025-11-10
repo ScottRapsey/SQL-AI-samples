@@ -20,30 +20,30 @@ public partial class Tools
         [Description("SQL SELECT query")] string sql,
         [Description("Optional database name. If not specified, uses the default database from connection string.")] string? database = null)
     {
-        var conn = database == null 
+        var conn = database == null
             ? await _connectionFactory.GetOpenConnectionAsync()
             : await _connectionFactory.GetOpenConnectionAsync(database);
-        
+
         try
         {
             using (conn)
             {
                 using var cmd = new SqlCommand(sql, conn);
                 using var reader = await cmd.ExecuteReaderAsync();
-                
+
                 var results = new List<Dictionary<string, object?>>();
-                
+
                 while (await reader.ReadAsync())
                 {
                     var row = new Dictionary<string, object?>();
-                    for (int i = 0; i < reader.FieldCount; i++)
+                    for (var i = 0; i < reader.FieldCount; i++)
                     {
                         var value = reader.GetValue(i);
                         row[reader.GetName(i)] = value is DBNull ? null : value;
                     }
                     results.Add(row);
                 }
-                
+
                 return new DbOperationResult(success: true, data: results);
             }
         }

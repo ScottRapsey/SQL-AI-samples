@@ -34,16 +34,16 @@ public partial class Tools
         var tableName = schema != null ? $"[{schema}].[{name}]" : $"[{name}]";
         var sql = $"DROP TABLE IF EXISTS {tableName}";
 
-        var conn = database == null 
+        var conn = database == null
             ? await _connectionFactory.GetOpenConnectionAsync()
             : await _connectionFactory.GetOpenConnectionAsync(database);
-        
+
         try
         {
             using (conn)
             {
                 using var cmd = new SqlCommand(sql, conn);
-                await cmd.ExecuteNonQueryAsync();
+                _ = await cmd.ExecuteNonQueryAsync();
                 return new DbOperationResult(success: true, rowsAffected: 0);
             }
         }

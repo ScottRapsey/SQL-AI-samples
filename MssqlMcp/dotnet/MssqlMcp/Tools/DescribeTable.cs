@@ -90,10 +90,10 @@ JOIN
 GROUP BY
     fk.name, tp.schema_id, tp.name, tr.schema_id, tr.name;
 ";
-        var conn = database == null 
+        var conn = database == null
             ? await _connectionFactory.GetOpenConnectionAsync()
             : await _connectionFactory.GetOpenConnectionAsync(database);
-        
+
         try
         {
             using (conn)

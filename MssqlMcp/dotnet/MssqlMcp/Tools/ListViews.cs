@@ -21,10 +21,10 @@ public partial class Tools
     public async Task<DbOperationResult> ListViews(
         [Description("Optional database name. If not specified, uses the default database from connection string.")] string? database = null)
     {
-        var conn = database == null 
+        var conn = database == null
             ? await _connectionFactory.GetOpenConnectionAsync()
             : await _connectionFactory.GetOpenConnectionAsync(database);
-        
+
         try
         {
             using (conn)
