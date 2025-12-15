@@ -15,10 +15,12 @@ public partial class Tools
         ReadOnly = true,
         Idempotent = true,
         Destructive = false),
-        Description("Returns stored procedure metadata including parameters and definition")]
+        Description("Returns stored procedure metadata including parameters and definition. Optionally can include incoming dependents (objects that reference this procedure) which may be expensive and incomplete for dynamic/cross-db references or large schemas.")]
     public async Task<DbOperationResult> DescribeStoredProcedure(
         [Description("Name of stored procedure")] string name,
-        [Description("Optional database name. If not specified, uses the default database from connection string.")] string? database = null)
+        [Description("Optional database name. If not specified, uses the default database from connection string.")] string? database = null,
+        [Description("Include incoming dependents (objects that reference this object). May be expensive; default = false.")] bool includeDependents = false,
+        [Description("Maximum number of dependents to return when includeDependents is true. Default = 500.")] int maxDependents = 500)
     {
         string? schema = null;
         if (name.Contains('.'))
@@ -60,7 +62,7 @@ public partial class Tools
             INNER JOIN sys.schemas s ON p.schema_id = s.schema_id
             WHERE p.name = @ProcedureName AND (s.name = @ProcedureSchema OR @ProcedureSchema IS NULL)";
 
-        // Query for dependencies
+        // Query for dependencies (outgoing references)
         const string DependenciesQuery = @"SELECT DISTINCT 
                 SCHEMA_NAME(o.schema_id) AS referenced_schema,
                 o.name AS referenced_object,
@@ -68,6 +70,16 @@ public partial class Tools
             FROM sys.sql_expression_dependencies d
             INNER JOIN sys.objects o ON d.referenced_id = o.object_id
             WHERE d.referencing_id = (SELECT object_id FROM sys.procedures p INNER JOIN sys.schemas s ON p.schema_id = s.schema_id WHERE p.name = @ProcedureName AND (s.name = @ProcedureSchema OR @ProcedureSchema IS NULL))";
+
+        // Query for dependents (incoming references)
+        const string DependentsQuery = @"SELECT DISTINCT TOP(@Max) 
+                SCHEMA_NAME(o.schema_id) AS referencing_schema,
+                o.name AS referencing_object,
+                o.type_desc AS object_type
+            FROM sys.sql_expression_dependencies d
+            INNER JOIN sys.objects o ON d.referencing_id = o.object_id
+            WHERE d.referenced_id = (SELECT object_id FROM sys.procedures p INNER JOIN sys.schemas s ON p.schema_id = s.schema_id WHERE p.name = @ProcedureName AND (s.name = @ProcedureSchema OR @ProcedureSchema IS NULL))
+            ORDER BY o.name";
 
         var conn = database == null
             ? await _connectionFactory.GetOpenConnectionAsync()
@@ -158,6 +170,29 @@ public partial class Tools
                         });
                     }
                     result["dependencies"] = dependencies;
+                }
+
+                // Dependents (incoming) - optional
+                if (includeDependents)
+                {
+                    using (var cmd = new SqlCommand(DependentsQuery, conn))
+                    {
+                        _ = cmd.Parameters.AddWithValue("@ProcedureName", name);
+                        _ = cmd.Parameters.AddWithValue("@ProcedureSchema", schema == null ? DBNull.Value : schema);
+                        _ = cmd.Parameters.AddWithValue("@Max", maxDependents);
+                        using var reader = await cmd.ExecuteReaderAsync();
+                        var dependents = new List<object>();
+                        while (await reader.ReadAsync())
+                        {
+                            dependents.Add(new
+                            {
+                                referencing_schema = reader["referencing_schema"],
+                                referencing_object = reader["referencing_object"],
+                                object_type = reader["object_type"]
+                            });
+                        }
+                        result["dependents"] = dependents;
+                    }
                 }
 
                 return new DbOperationResult(success: true, data: result);
