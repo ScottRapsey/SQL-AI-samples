@@ -22,6 +22,10 @@ public partial class Tools
         [Description("Include incoming dependents (objects that reference this object). May be expensive; default = false.")] bool includeDependents = false,
         [Description("Maximum number of dependents to return when includeDependents is true. Default = 500.")] int maxDependents = 500)
     {
+        if (maxDependents <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxDependents), "maxDependents must be greater than zero.");
+        }
         string? schema = null;
         if (name.Contains('.'))
         {
