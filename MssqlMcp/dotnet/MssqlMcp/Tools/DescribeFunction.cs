@@ -15,11 +15,17 @@ public partial class Tools
         ReadOnly = true,
         Idempotent = true,
         Destructive = false),
-        Description("Returns function metadata including parameters, return type, and definition")]
+        Description("Returns function metadata including parameters, return type, and definition. Optionally can include incoming dependents (objects that reference this function) which may be expensive and incomplete for dynamic/cross-db references or large schemas.")]
     public async Task<DbOperationResult> DescribeFunction(
         [Description("Name of function")] string name,
-        [Description("Optional database name. If not specified, uses the default database from connection string.")] string? database = null)
+        [Description("Optional database name. If not specified, uses the default database from connection string.")] string? database = null,
+        [Description("Include incoming dependents (objects that reference this object). May be expensive; default = false.")] bool includeDependents = false,
+        [Description("Maximum number of dependents to return when includeDependents is true. Default = 500.")] int maxDependents = 500)
     {
+        if (includeDependents && maxDependents <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxDependents), "maxDependents must be greater than zero when includeDependents is true.");
+        }
         string? schema = null;
         if (name.Contains('.'))
         {
@@ -99,6 +105,16 @@ public partial class Tools
             FROM sys.sql_expression_dependencies d
             INNER JOIN sys.objects o ON d.referenced_id = o.object_id
             WHERE d.referencing_id = (SELECT object_id FROM sys.objects obj INNER JOIN sys.schemas s ON obj.schema_id = s.schema_id WHERE obj.type IN ('FN', 'IF', 'TF') AND obj.name = @FunctionName AND (s.name = @FunctionSchema OR @FunctionSchema IS NULL))";
+
+        // Query for dependents (incoming references)
+        const string DependentsQuery = @"SELECT DISTINCT TOP(@Max) 
+                SCHEMA_NAME(o.schema_id) AS referencing_schema,
+                o.name AS referencing_object,
+                o.type_desc AS object_type
+            FROM sys.sql_expression_dependencies d
+            INNER JOIN sys.objects o ON d.referencing_id = o.object_id
+            WHERE d.referenced_id = (SELECT object_id FROM sys.objects obj INNER JOIN sys.schemas s ON obj.schema_id = s.schema_id WHERE obj.type IN ('FN', 'IF', 'TF') AND obj.name = @FunctionName AND (s.name = @FunctionSchema OR @FunctionSchema IS NULL))
+            ORDER BY o.name";
 
         var conn = database == null
             ? await _connectionFactory.GetOpenConnectionAsync()
@@ -232,6 +248,29 @@ public partial class Tools
                         });
                     }
                     result["dependencies"] = dependencies;
+                }
+
+                // Dependents (incoming) - optional
+                if (includeDependents)
+                {
+                    using (var cmd = new SqlCommand(DependentsQuery, conn))
+                    {
+                        _ = cmd.Parameters.AddWithValue("@FunctionName", name);
+                        _ = cmd.Parameters.AddWithValue("@FunctionSchema", schema == null ? DBNull.Value : schema);
+                        _ = cmd.Parameters.AddWithValue("@Max", maxDependents);
+                        using var reader = await cmd.ExecuteReaderAsync();
+                        var dependents = new List<object>();
+                        while (await reader.ReadAsync())
+                        {
+                            dependents.Add(new
+                            {
+                                referencing_schema = reader["referencing_schema"],
+                                referencing_object = reader["referencing_object"],
+                                object_type = reader["object_type"]
+                            });
+                        }
+                        result["dependents"] = dependents;
+                    }
                 }
 
                 return new DbOperationResult(success: true, data: result);

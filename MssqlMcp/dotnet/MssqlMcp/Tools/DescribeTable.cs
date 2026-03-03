@@ -15,11 +15,17 @@ public partial class Tools
         ReadOnly = true,
         Idempotent = true,
         Destructive = false),
-        Description("Returns table schema")]
+        Description("Returns table schema. Optionally can include incoming dependents (objects that reference this table) which may be expensive and incomplete for dynamic/cross-db references or large schemas.")]
     public async Task<DbOperationResult> DescribeTable(
         [Description("Name of table")] string name,
-        [Description("Optional database name. If not specified, uses the default database from connection string.")] string? database = null)
+        [Description("Optional database name. If not specified, uses the default database from connection string.")] string? database = null,
+        [Description("Include incoming dependents (objects that reference this object). May be expensive; default = false.")] bool includeDependents = false,
+        [Description("Maximum number of dependents to return when includeDependents is true. Default = 500.")] int maxDependents = 500)
     {
+        if (maxDependents <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxDependents), "maxDependents must be greater than zero.");
+        }
         string? schema = null;
         if (name.Contains('.'))
         {
@@ -90,6 +96,25 @@ JOIN
 GROUP BY
     fk.name, tp.schema_id, tp.name, tr.schema_id, tr.name;
 ";
+
+        const string ForeignKeyDependentsQuery = @"SELECT DISTINCT TOP(@Max)
+                SCHEMA_NAME(parent.schema_id) AS referencing_schema,
+                parent.name AS referencing_object,
+                'FOREIGN_KEY' AS object_type
+            FROM sys.foreign_keys fk
+            INNER JOIN sys.tables parent ON fk.parent_object_id = parent.object_id
+            WHERE fk.referenced_object_id = (SELECT object_id FROM sys.tables t INNER JOIN sys.schemas s ON t.schema_id = s.schema_id WHERE t.name = @TableName and (s.name = @TableSchema or @TableSchema IS NULL ))
+            ORDER BY parent.name";
+
+        const string SqlExpressionDependentsQuery = @"SELECT DISTINCT TOP(@Max)
+                SCHEMA_NAME(o.schema_id) AS referencing_schema,
+                o.name AS referencing_object,
+                o.type_desc AS object_type
+            FROM sys.sql_expression_dependencies d
+            INNER JOIN sys.objects o ON d.referencing_id = o.object_id
+            WHERE d.referenced_id = (SELECT object_id FROM sys.tables t INNER JOIN sys.schemas s ON t.schema_id = s.schema_id WHERE t.name = @TableName and (s.name = @TableSchema or @TableSchema IS NULL ))
+            ORDER BY o.name";
+
         var conn = database == null
             ? await _connectionFactory.GetOpenConnectionAsync()
             : await _connectionFactory.GetOpenConnectionAsync(database);
@@ -203,6 +228,50 @@ GROUP BY
                         });
                     }
                     result["foreignKeys"] = foreignKeys;
+                }
+
+                // Dependents (incoming) - optional
+                if (includeDependents)
+                {
+                    var dependents = new List<object>();
+
+                    // Foreign key dependents
+                    using (var cmd = new SqlCommand(ForeignKeyDependentsQuery, conn))
+                    {
+                        _ = cmd.Parameters.AddWithValue("@TableName", name);
+                        _ = cmd.Parameters.AddWithValue("@TableSchema", schema == null ? DBNull.Value : schema);
+                        _ = cmd.Parameters.AddWithValue("@Max", maxDependents);
+                        using var reader = await cmd.ExecuteReaderAsync();
+                        while (await reader.ReadAsync())
+                        {
+                            dependents.Add(new
+                            {
+                                referencing_schema = reader["referencing_schema"],
+                                referencing_object = reader["referencing_object"],
+                                object_type = reader["object_type"]
+                            });
+                        }
+                    }
+
+                    // SQL expression dependents (views, procs, funcs referencing the table)
+                    using (var cmd = new SqlCommand(SqlExpressionDependentsQuery, conn))
+                    {
+                        _ = cmd.Parameters.AddWithValue("@TableName", name);
+                        _ = cmd.Parameters.AddWithValue("@TableSchema", schema == null ? DBNull.Value : schema);
+                        _ = cmd.Parameters.AddWithValue("@Max", maxDependents);
+                        using var reader = await cmd.ExecuteReaderAsync();
+                        while (await reader.ReadAsync())
+                        {
+                            dependents.Add(new
+                            {
+                                referencing_schema = reader["referencing_schema"],
+                                referencing_object = reader["referencing_object"],
+                                object_type = reader["object_type"]
+                            });
+                        }
+                    }
+
+                    result["dependents"] = dependents;
                 }
 
                 return new DbOperationResult(success: true, data: result);
