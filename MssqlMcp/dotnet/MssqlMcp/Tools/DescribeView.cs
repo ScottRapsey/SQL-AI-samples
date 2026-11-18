@@ -24,7 +24,7 @@ public partial class Tools
     {
         if (includeDependents && maxDependents <= 0)
         {
-            return DbOperationResult.Failure($"maxDependents must be greater than zero when includeDependents is true.");
+            return new DbOperationResult(success: false, error: $"maxDependents must be greater than zero when includeDependents is true.");
         }
         string? schema = null;
         if (name.Contains('.'))
