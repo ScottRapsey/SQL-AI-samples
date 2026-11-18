@@ -1,12 +1,54 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using ModelContextProtocol.Server;
 using Moq;
 using Mssql.McpServer;
 
 namespace MssqlMcp.Tests
 {
+    public sealed class ReadOnlyToolRegistrationTests
+    {
+        [Fact]
+        public void ReadOnlyMode_RegistersOnlyToolsMarkedReadOnly()
+        {
+            var toolNames = GetRegisteredToolNames(readOnlyMode: true);
+
+            Assert.Contains(nameof(Tools.ReadData), toolNames);
+            Assert.DoesNotContain(nameof(Tools.CreateTable), toolNames);
+            Assert.DoesNotContain(nameof(Tools.DropTable), toolNames);
+            Assert.DoesNotContain(nameof(Tools.InsertData), toolNames);
+            Assert.DoesNotContain(nameof(Tools.UpdateData), toolNames);
+            Assert.DoesNotContain(nameof(Tools.ExecuteStoredProcedure), toolNames);
+        }
+
+        [Fact]
+        public void NormalMode_RegistersReadOnlyAndWriteTools()
+        {
+            var toolNames = GetRegisteredToolNames(readOnlyMode: false);
+
+            Assert.Contains(nameof(Tools.ReadData), toolNames);
+            Assert.Contains(nameof(Tools.CreateTable), toolNames);
+            Assert.Contains(nameof(Tools.DropTable), toolNames);
+            Assert.Contains(nameof(Tools.InsertData), toolNames);
+            Assert.Contains(nameof(Tools.UpdateData), toolNames);
+            Assert.Contains(nameof(Tools.ExecuteStoredProcedure), toolNames);
+        }
+
+        private static string[] GetRegisteredToolNames(bool readOnlyMode)
+        {
+            var services = new ServiceCollection();
+            _ = services.AddLogging();
+            _ = services.AddSingleton<ISqlConnectionFactory, SqlConnectionFactory>();
+            _ = services.AddMcpServer().WithTools(new[] { typeof(Tools) }, readOnlyMode);
+
+            using var provider = services.BuildServiceProvider();
+            return provider.GetServices<McpServerTool>().Select(tool => tool.ProtocolTool.Name).ToArray();
+        }
+    }
+
     public sealed class MssqlMcpTests : IDisposable
     {
         private readonly string _tableName;

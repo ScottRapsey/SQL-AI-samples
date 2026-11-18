@@ -17,6 +17,8 @@ internal class Program
     /// <param name="args">Command-line arguments.</param>
     private static async Task Main(string[] args)
     {
+        var readOnlyMode = GetReadOnlyMode();
+
         // Create the application host builder
         var builder = Host.CreateApplicationBuilder(args);
 
@@ -34,10 +36,12 @@ internal class Program
         _ = builder.Services
             .AddMcpServer()
             .WithStdioServerTransport()
-            .WithToolsFromAssembly();
+            .WithTools(new[] { typeof(Tools) }, readOnlyMode);
 
         // Build the host
         var host = builder.Build();
+        host.Services.GetRequiredService<ILogger<Program>>()
+            .LogInformation("MCP server read-only mode: {ReadOnlyMode}", readOnlyMode);
 
         // Setup cancellation token for graceful shutdown (Ctrl+C or SIGTERM)
         using var cts = new CancellationTokenSource();
@@ -67,5 +71,21 @@ internal class Program
             // Set a non-zero exit code
             Environment.ExitCode = 1;
         }
+    }
+
+    private static bool GetReadOnlyMode()
+    {
+        var value = Environment.GetEnvironmentVariable("READ_ONLY");
+        if (value is null)
+        {
+            return false;
+        }
+
+        if (bool.TryParse(value, out var readOnlyMode))
+        {
+            return readOnlyMode;
+        }
+
+        throw new InvalidOperationException("Environment variable 'READ_ONLY' must be 'true' or 'false'.");
     }
 }

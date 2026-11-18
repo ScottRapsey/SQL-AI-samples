@@ -16,7 +16,10 @@ This project is a .NET 8 console application implementing a Model Context Protoc
   - ReadData: Read/query data from tables.
   - UpdateData: Update values in tables.
 - **Logging**: Console logging using Microsoft.Extensions.Logging.
+- **Optional read-only mode**: Set `READ_ONLY` to `true` to register only tools marked `ReadOnly = true`. If unset or `false`, all tools are registered. Invalid values stop startup.
 - **Unit Tests**: xUnit-based unit tests for all major components.
+
+Read-only mode controls which MCP tools are exposed; it does not enforce read-only SQL permissions. Use a read-only SQL Server account as well, since tools such as `ReadData` accept caller-provided SQL.
 
 ## Getting Started
 
